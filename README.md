@@ -38,8 +38,8 @@ The **uber-nyc-dashboard** allows users to explore Uber pickup and drop-off data
 2. Create and activate the Conda environment:
 
    ```bash
-   conda create --name uber_nyc_dashboard_env python=3.9
-   conda activate uber_nyc_dashboard_env
+   conda create --name uber_nyc_env python=3.9
+   conda activate uber_nyc_env
    ```
 
 3. Install the required dependencies:
@@ -74,4 +74,4 @@ Contributions are welcome! If you would like to contribute to this project, plea
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
+This project is licensed under the Apache License. See the [LICENSE](LICENSE) file for more details.
