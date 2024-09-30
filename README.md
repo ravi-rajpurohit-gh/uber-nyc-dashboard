@@ -2,6 +2,8 @@
 
 A Streamlit-based interactive dashboard for exploring Uber pickups and drop-offs in New York City, using public datasets. This project utilizes Streamlit's core features to provide an intuitive, real-time visualization of ride patterns across different times and locations in NYC.
 
+[See it here!](https://uber-nyc-dashboard.streamlit.app/)
+
 ## Table of Contents
 
 - [Project Overview](#project-overview)
