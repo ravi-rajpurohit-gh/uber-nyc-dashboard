@@ -1,1 +1,6 @@
-Streamlit==1.38.0
+streamlit==1.38.0
+pandas
+numpy
+plotly
+pydeck
+openai
