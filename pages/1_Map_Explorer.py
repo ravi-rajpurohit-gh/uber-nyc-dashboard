@@ -1,19 +1,12 @@
 import streamlit as st
 import pydeck as pdk
 
-from pipeline.ingest import load_raw
-from pipeline.transform import enrich
+from data import get_data
 
-st.set_page_config(page_title="Map Explorer", page_icon="🗺️", layout="wide")
 st.title("Map Explorer")
 
-
-@st.cache_data(show_spinner="Loading data...")
-def get_data():
-    return enrich(load_raw())
-
-
-data = get_data()
+with st.spinner("Loading data..."):
+    data = get_data()
 
 # ── Sidebar controls ──────────────────────────────────────────────────────────
 with st.sidebar:
@@ -25,12 +18,9 @@ with st.sidebar:
         ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"],
         default=["Manhattan", "Brooklyn", "Queens"],
     )
-    st.divider()
-    st.caption("Heatmap shows density. Scatter shows individual pickups.")
 
 filtered = data[(data["hour"] == hour) & (data["borough"].isin(boroughs))]
-
-st.caption(f"**{len(filtered):,}** pickups at **{hour:02d}:00** in {', '.join(boroughs)}")
+st.caption(f"{len(filtered):,} pickups at {hour:02d}:00 in {', '.join(boroughs)}")
 
 # ── Deck ──────────────────────────────────────────────────────────────────────
 view_state = pdk.ViewState(latitude=40.730, longitude=-73.935, zoom=10, pitch=45)
@@ -49,7 +39,7 @@ else:
         data=filtered[["lat", "lon"]],
         get_position="[lon, lat]",
         get_radius=80,
-        get_fill_color=[255, 80, 0, 160],
+        get_fill_color=[29, 78, 216, 160],
         pickable=True,
     )
 

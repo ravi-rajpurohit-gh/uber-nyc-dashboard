@@ -2,8 +2,7 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-from pipeline.ingest import load_raw
-from pipeline.transform import enrich
+from data import get_data
 from pipeline.aggregate import (
     hourly_counts,
     borough_counts,
@@ -14,18 +13,12 @@ from pipeline.aggregate import (
 )
 
 st.title("NYC Uber Pickups")
-st.caption("September 2014 · ~100K rides · ingest → validate → enrich → aggregate")
+st.caption("September 2014 · ingest → validate → enrich → aggregate")
 
+with st.spinner("Loading data..."):
+    data = get_data()
 
-@st.cache_data(show_spinner="Running data pipeline...")
-def get_data():
-    raw = load_raw()
-    return enrich(raw)
-
-
-data = get_data()
-
-# ── KPI row ──────────────────────────────────────────────────────────────────
+# ── KPI row ───────────────────────────────────────────────────────────────────
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Total Pickups", f"{len(data):,}")
 k2.metric("Peak Hour", f"{peak_hour(data):02d}:00")
@@ -45,13 +38,14 @@ with col_l:
         x="hour",
         y="pickups",
         color="anomaly",
-        color_discrete_map={True: "#FF4B4B", False: "#4B8BFF"},
+        color_discrete_map={True: "#B91C1C", False: "#1D4ED8"},
         labels={"hour": "Hour of Day", "pickups": "Pickups", "anomaly": "Anomaly"},
         hover_data={"z_score": ":.2f"},
+        template="dashboard",
     )
-    fig.update_layout(showlegend=True, margin=dict(t=10, b=0), height=300)
+    fig.update_layout(showlegend=True, height=300)
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("Red bars = statistical anomaly (|z-score| > 1.8)")
+    st.caption("Highlighted bars are statistical anomalies (|z-score| > 1.8)")
 
 with col_r:
     st.subheader("Pickups by Borough")
@@ -63,22 +57,23 @@ with col_r:
         color="pickups",
         color_continuous_scale="Blues",
         labels={"borough": "", "pickups": "Pickups"},
+        template="dashboard",
     )
-    fig.update_layout(coloraxis_showscale=False, margin=dict(t=10, b=0), height=300)
+    fig.update_layout(coloraxis_showscale=False, height=300)
     st.plotly_chart(fig, use_container_width=True)
 
-# ── Row 2: hour × day heatmap ─────────────────────────────────────────────────
-st.subheader("Demand Heatmap: Hour × Day of Week")
+# ── Row 2: heatmap ────────────────────────────────────────────────────────────
+st.subheader("Demand Heatmap — Hour x Day of Week")
 dhm = day_hour_heatmap(data)
 fig = go.Figure(
     go.Heatmap(
         z=dhm.values,
         x=[f"{h:02d}:00" for h in dhm.columns],
         y=dhm.index.tolist(),
-        colorscale="YlOrRd",
+        colorscale="Blues",
         hoverongaps=False,
         hovertemplate="Hour: %{x}<br>Day: %{y}<br>Pickups: %{z:,}<extra></extra>",
     )
 )
-fig.update_layout(margin=dict(t=10, b=0), height=270)
+fig.update_layout(template="dashboard", height=270)
 st.plotly_chart(fig, use_container_width=True)

@@ -7,8 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from openai import OpenAI, APIConnectionError
 
-from pipeline.ingest import load_raw
-from pipeline.transform import enrich
+from data import get_data
 from pipeline.aggregate import (
     hourly_counts,
     borough_counts,
@@ -22,18 +21,11 @@ from pipeline.aggregate import (
 st.title("AI Analyst")
 st.caption("Ask questions about NYC Uber demand in plain English")
 
-
-@st.cache_data(show_spinner="Loading data...")
-def get_data():
-    return enrich(load_raw())
-
-
-data = get_data()
+with st.spinner("Loading data..."):
+    data = get_data()
 
 
 # ── LLM client — provider-agnostic ───────────────────────────────────────────
-# Uses Groq (free cloud inference) when GROQ_API_KEY is set,
-# otherwise falls back to a local Ollama instance.
 def _get_client() -> tuple[OpenAI, str]:
     if os.getenv("GROQ_API_KEY"):
         return (
@@ -49,7 +41,7 @@ def _get_client() -> tuple[OpenAI, str]:
     )
 
 
-# ── Tool definitions (OpenAI function-calling format) ────────────────────────
+# ── Tool definitions ──────────────────────────────────────────────────────────
 TOOLS = [
     {
         "type": "function",
@@ -111,7 +103,6 @@ TOOLS = [
 
 # ── Tool execution ────────────────────────────────────────────────────────────
 def _run_tool(name: str, args: dict) -> tuple[str, object | None]:
-    """Returns (json_string_for_llm, optional_plotly_figure)."""
     if name == "get_hourly_breakdown":
         borough = args.get("borough", "All")
         df = data if borough == "All" else data[data["borough"] == borough]
@@ -122,8 +113,9 @@ def _run_tool(name: str, args: dict) -> tuple[str, object | None]:
             color="pickups", color_continuous_scale="Blues",
             title=f"Pickups by Hour — {borough}",
             labels={"hour": "Hour of Day", "pickups": "Pickups"},
+            template="dashboard",
         )
-        fig.update_layout(coloraxis_showscale=False, margin=dict(t=40, b=0))
+        fig.update_layout(coloraxis_showscale=False)
         return result.to_json(orient="records"), fig
 
     if name == "get_borough_breakdown":
@@ -131,11 +123,12 @@ def _run_tool(name: str, args: dict) -> tuple[str, object | None]:
         fig = px.bar(
             result[result["borough"] != "Other"],
             x="borough", y="pickups",
-            color="pickups", color_continuous_scale="Oranges",
+            color="pickups", color_continuous_scale="Blues",
             title="Pickups by Borough",
             labels={"borough": "", "pickups": "Pickups"},
+            template="dashboard",
         )
-        fig.update_layout(coloraxis_showscale=False, margin=dict(t=40, b=0))
+        fig.update_layout(coloraxis_showscale=False)
         return result.to_json(orient="records"), fig
 
     if name == "get_day_hour_heatmap":
@@ -145,11 +138,11 @@ def _run_tool(name: str, args: dict) -> tuple[str, object | None]:
                 z=result.values,
                 x=[f"{h:02d}:00" for h in result.columns],
                 y=result.index.tolist(),
-                colorscale="YlOrRd",
+                colorscale="Blues",
                 hovertemplate="Hour: %{x}<br>Day: %{y}<br>Pickups: %{z:,}<extra></extra>",
             )
         )
-        fig.update_layout(title="Demand Heatmap: Hour × Day of Week", margin=dict(t=40, b=0))
+        fig.update_layout(title="Demand Heatmap — Hour x Day of Week", template="dashboard")
         return result.to_json(), fig
 
     if name == "get_weekend_vs_weekday":
@@ -159,8 +152,8 @@ def _run_tool(name: str, args: dict) -> tuple[str, object | None]:
             x="hour", y="pickups", color="period",
             title="Weekday vs Weekend Demand",
             labels={"hour": "Hour", "pickups": "Pickups", "period": ""},
+            template="dashboard",
         )
-        fig.update_layout(margin=dict(t=40, b=0))
         return result.to_json(orient="records"), fig
 
     if name == "get_peak_stats":
@@ -179,7 +172,7 @@ def _run_tool(name: str, args: dict) -> tuple[str, object | None]:
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("Setup")
+    st.header("Configuration")
     if os.getenv("GROQ_API_KEY"):
         st.success("Connected via Groq")
         st.caption("Model: llama-3.3-70b-versatile")
@@ -194,18 +187,18 @@ brew install ollama
 ollama pull llama3.2
 ollama serve
 ```
-Or set `GROQ_API_KEY` for free cloud inference via [Groq](https://console.groq.com).
+Or set `GROQ_API_KEY` for cloud inference.
             """
         )
     st.divider()
-    if st.button("Clear chat", use_container_width=True):
+    if st.button("Clear conversation", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
 
-# ── Session state ─────────────────────────────────────────────────────────────
+# ── System prompt ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are a concise data analyst for NYC Uber Pickups (September 2014).
-Dataset: ~100,000 pickup records. Fields: date/time, lat, lon, base, hour, day_name, is_weekend, borough.
+Dataset: ~1M pickup records. Fields: date/time, lat, lon, base, hour, day_name, is_weekend, borough.
 Boroughs: Manhattan, Brooklyn, Queens, Bronx, Staten Island.
 
 When answering:
@@ -216,9 +209,9 @@ When answering:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# ── Suggestion buttons (shown only on fresh chat) ────────────────────────────
+# ── Suggestion buttons ────────────────────────────────────────────────────────
 SUGGESTIONS = [
-    "What's the peak pickup hour?",
+    "What is the peak pickup hour?",
     "Compare weekday vs weekend demand",
     "Which borough has the most pickups?",
     "Show hourly breakdown for Manhattan",
@@ -229,13 +222,13 @@ SUGGESTIONS = [
 pending = None
 
 if not st.session_state.messages:
-    st.markdown("**Try asking:**")
+    st.markdown("**Suggested questions**")
     cols = st.columns(3)
     for i, s in enumerate(SUGGESTIONS):
         if cols[i % 3].button(s, key=f"sug_{i}", use_container_width=True):
             pending = s
 
-# ── Render chat history ───────────────────────────────────────────────────────
+# ── Chat history ──────────────────────────────────────────────────────────────
 for msg in st.session_state.messages:
     if msg["role"] not in ("user", "assistant"):
         continue
@@ -253,8 +246,7 @@ for msg in st.session_state.messages:
                 c4.metric("Latency", f"{u['latency_s']:.2f}s")
 
 # ── New input ─────────────────────────────────────────────────────────────────
-chat_input = st.chat_input("Ask about the data...")
-prompt = chat_input or pending
+prompt = st.chat_input("Ask about the data...") or pending
 
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -293,8 +285,8 @@ if prompt:
                 tool_name = tc.function.name
                 tool_args = json.loads(tc.function.arguments or "{}")
 
-                with st.expander(f"Tool: `{tool_name}({tool_args})`", expanded=False):
-                    st.caption("Running analysis…")
+                with st.expander(f"Tool call: {tool_name}", expanded=False):
+                    st.json(tool_args)
 
                 tool_result, fig = _run_tool(tool_name, tool_args)
 
@@ -351,8 +343,8 @@ if prompt:
 
         except APIConnectionError:
             answer = (
-                "Cannot reach the LLM. If running locally, start Ollama with `ollama serve`. "
-                "For cloud inference, set the `GROQ_API_KEY` environment variable."
+                "Cannot reach the LLM. Start Ollama with `ollama serve`, "
+                "or set the GROQ_API_KEY environment variable."
             )
             st.error(answer)
         except Exception as e:
