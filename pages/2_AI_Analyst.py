@@ -1,9 +1,6 @@
-import sys
 import os
 import json
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import time
 
 import streamlit as st
 import plotly.express as px
@@ -22,7 +19,6 @@ from pipeline.aggregate import (
     peak_borough,
 )
 
-st.set_page_config(page_title="AI Analyst", page_icon="🤖", layout="wide")
 st.title("AI Analyst")
 st.caption("Ask questions about NYC Uber demand in plain English")
 
@@ -181,7 +177,7 @@ def _run_tool(name: str, args: dict) -> tuple[str, object | None]:
     return json.dumps({"error": f"Unknown tool: {name}"}), None
 
 
-# ── Sidebar: setup instructions ───────────────────────────────────────────────
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("Setup")
     if os.getenv("GROQ_API_KEY"):
@@ -247,6 +243,14 @@ for msg in st.session_state.messages:
         st.write(msg["content"])
         if msg.get("figure"):
             st.plotly_chart(msg["figure"], use_container_width=True)
+        if msg.get("usage"):
+            u = msg["usage"]
+            with st.expander("Usage", expanded=False):
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Prompt tokens", f"{u['prompt_tokens']:,}")
+                c2.metric("Completion tokens", f"{u['completion_tokens']:,}")
+                c3.metric("Total tokens", f"{u['total_tokens']:,}")
+                c4.metric("Latency", f"{u['latency_s']:.2f}s")
 
 # ── New input ─────────────────────────────────────────────────────────────────
 chat_input = st.chat_input("Ask about the data...")
@@ -260,14 +264,17 @@ if prompt:
     with st.chat_message("assistant"):
         answer = ""
         fig = None
+        usage: dict | None = None
+
         try:
             client, model = _get_client()
 
-            # Build clean API messages (no Python objects)
             api_messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
             for m in st.session_state.messages:
                 if m["role"] in ("user", "assistant"):
                     api_messages.append({"role": m["role"], "content": m["content"]})
+
+            t0 = time.perf_counter()
 
             with st.spinner("Thinking..."):
                 response = client.chat.completions.create(
@@ -278,6 +285,8 @@ if prompt:
                 )
 
             msg_obj = response.choices[0].message
+            prompt_tokens = response.usage.prompt_tokens
+            completion_tokens = response.usage.completion_tokens
 
             if msg_obj.tool_calls:
                 tc = msg_obj.tool_calls[0]
@@ -289,7 +298,6 @@ if prompt:
 
                 tool_result, fig = _run_tool(tool_name, tool_args)
 
-                # Second call: model interprets tool output
                 api_messages.append({
                     "role": "assistant",
                     "content": msg_obj.content or "",
@@ -315,13 +323,31 @@ if prompt:
                         model=model,
                         messages=api_messages,
                     )
+
                 answer = final.choices[0].message.content or ""
+                prompt_tokens += final.usage.prompt_tokens
+                completion_tokens += final.usage.completion_tokens
             else:
                 answer = msg_obj.content or ""
+
+            latency = time.perf_counter() - t0
+            usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+                "latency_s": latency,
+            }
 
             st.write(answer)
             if fig:
                 st.plotly_chart(fig, use_container_width=True)
+
+            with st.expander("Usage", expanded=False):
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Prompt tokens", f"{usage['prompt_tokens']:,}")
+                c2.metric("Completion tokens", f"{usage['completion_tokens']:,}")
+                c3.metric("Total tokens", f"{usage['total_tokens']:,}")
+                c4.metric("Latency", f"{usage['latency_s']:.2f}s")
 
         except APIConnectionError:
             answer = (
@@ -337,4 +363,5 @@ if prompt:
         "role": "assistant",
         "content": answer,
         "figure": fig,
+        "usage": usage,
     })
