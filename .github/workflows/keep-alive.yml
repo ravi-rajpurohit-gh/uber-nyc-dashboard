@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Ping uber-nyc-dashboard.streamlit.app
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://uber-nyc-dashboard.streamlit.app/)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 60 https://uber-nyc-dashboard.streamlit.app/)
           echo "HTTP status: $STATUS"
           if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 400 ]; then
             echo "Unexpected status code: $STATUS"
